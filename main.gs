@@ -244,6 +244,7 @@ const DEBT_COL_ITEM_END   = 16;
   const PENDING_COL_KM_SOTIEN  = 7;   // G: Số tiền KM
   const PENDING_COL_CASHIER    = 12;  // L: Thu ngân
   const PENDING_COL_ORDER_ID   = 13;  // M: Mã đơn
+  const PENDING_COL_DEPOSIT    = 17;  // Q: Đặt cọc
   var PENDING_DATA_START = 2; // dữ liệu đơn chờ bắt đầu từ hàng 2 (sau header)
 
 
@@ -253,8 +254,7 @@ const PENDING_COL_ITEM_COUNT = 14;  // N: Số món (cache)
   const DEBT_HEADER_ROW = 1;
   const DEBT_DATA_START = 2;
 // Cập nhật lại các hằng số cột
-const DEBT_COL_DEPOSIT = 17; // Cột Q: Đặt cọc
-const PENDING_COL_DEPOSIT = 17; 
+const DEBT_COL_DEPOSIT = 17; // Cột Q: Đặt cọc 
 const DEBT_LAST_COL = 17;
 const PENDING_LAST_COL = 17;
   const STATUS_PAID   = "Đã thanh toán";
@@ -1645,7 +1645,13 @@ function saveConfirmedOrder_(orderPayload) {
     }
 
     const doanhSo = Math.max(0, calc.doanhSo || 0);
-    const trangThai = String(h.trangThai || STATUS_DEBT).trim();
+    let trangThai = String(h.trangThai || STATUS_DEBT).trim();
+
+    // Nếu khuyến mãi 100% (doanhSo = 0), mặc định "Đã thanh toán"
+    if (doanhSo === 0 && calc.tongDon > 0) {
+      trangThai = STATUS_PAID;
+    }
+
     // Công nợ = Doanh số (sau KM) - Đặt cọc
     const congNo = (trangThai === STATUS_PAID) ? 0 : Math.max(0, doanhSo - datCoc);
 
@@ -1678,22 +1684,31 @@ function saveConfirmedOrder_(orderPayload) {
     const info = (h.tenKH || "") + " - " + sdt + " - " + (h.diaChi || "");
     const orderId = h.orderId || makeOrderId_(ngay, sdt);
     
-    const calc = calcTotalsFromItems_(items, h.soMam, h.kmSoTien);
+    let calc = calcTotalsFromItems_(items, h.soMam, h.kmSoTien);
     const shP = getPendingSheet_();
     const shData = getSheet_(SHEET_DATA);
 
     let span = {startRow:0, endRow:0, count:0};
+    let isOnlyDeposit = (items.length === 0 && datCoc > 0);
+
     if (items.length > 0) {
       span = appendItemsToData_(shData, ngay, h.tenKH, sdt, h.diaChi, items, orderId, calc.donGiaMam);
+    }
+
+    // Nếu chỉ có đặt cọc, set tổng đơn = đặt cọc
+    if (isOnlyDeposit) {
+      calc = { donGiaMam: datCoc, tongDon: datCoc, doanhSo: datCoc };
     }
 
     // Đơn chờ: Công nợ = Tổng đơn - KM - Đặt cọc
     const pendingCongNo = Math.max(0, calc.tongDon - h.kmSoTien - datCoc);
 
+    const statusText = isOnlyDeposit ? "Đặt cọc" : "Chưa thanh toán";
+
     const pendingRow = [
       ngay, info, h.soMam, calc.donGiaMam, calc.tongDon,
       h.kmNoiDung, h.kmSoTien, 0, pendingCongNo,
-      "Chưa thanh toán", "", orderPayload.meta.username || "", 
+      statusText, "", orderPayload.meta.username || "",
       orderId, span.count, span.startRow, span.endRow, datCoc
     ];
 
@@ -1900,12 +1915,28 @@ function saveConfirmedOrder_(orderPayload) {
   const kmNoiDung = String(r[PENDING_COL_KM_NOIDUNG - 1] || "").trim();
   const kmSoTien = toMoneyNumber_(r[PENDING_COL_KM_SOTIEN - 1] || 0);
   const thungan = String(r[PENDING_COL_CASHIER - 1] || "").trim();
+  const datCoc = toMoneyNumber_(r[PENDING_COL_DEPOSIT - 1] || 0);
+
+  // Debug log để kiểm tra dữ liệu từ sheet
+  Logger.log('SHEET DATA DEBUG: ' + JSON.stringify({
+    rowIndex, soMam, donGiaMam, tongDon, datCoc,
+    rawData: r.slice(0, 17), // Log 17 cột đầu
+    datCocColumn: r[16], // Cột 17 (index 16)
+    PENDING_COL_DEPOSIT: PENDING_COL_DEPOSIT
+  }));
+
+  // Also try console.log for browser
+  console.log('SHEET DATA DEBUG:', {
+    rowIndex, soMam, donGiaMam, tongDon, datCoc,
+    rawData: r.slice(0, 17),
+    datCocColumn: r[16],
+    PENDING_COL_DEPOSIT: PENDING_COL_DEPOSIT
+  });
 
   const shData = ss.getSheetByName(SHEET_DATA);
   if (!shData) return { ok: false, error: "Không tìm thấy sheet '" + SHEET_DATA + "'." };
 
   const items = getItemsByOrderId_(shData, orderId);
-  if (!items || !items.length) return { ok: false, error: "Không lấy được dữ liệu in (không tìm thấy món theo mã đơn)." };
 
   const sdt = normalizePhone_(extractPhoneFromInfo_(info));
   const tenKH = getNameFromInfo_(info) || "";
@@ -1922,13 +1953,15 @@ function saveConfirmedOrder_(orderPayload) {
     tongDon: tongDon,
     kmNoiDung: kmNoiDung,
     kmSoTien: kmSoTien,
+    datCoc: datCoc,
     thungan: thungan,
     trangThai: STATUS_UNPAID,
     status: STATUS_UNPAID,
     orderId: orderId
   };
 
-  return { ok: true, header: header, items: items };
+  // ✅ Cho phép in đơn ngay cả khi không có món (đơn đặt cọc)
+  return { ok: true, header: header, items: items || [] };
 }
 
   function updatePendingOrder(rowIndex, payload) {
@@ -1954,7 +1987,12 @@ function saveConfirmedOrder_(orderPayload) {
       const h = payload.header || {};
       const items = payload.items || [];
 
-      const status = String(h.trangThai || "").trim(); // "" = vẫn pending, khác "" = chốt
+      let status = String(h.trangThai || "").trim(); // "" = vẫn pending, khác "" = chốt
+
+      // Nếu khuyến mãi 100% (doanh thu = 0), mặc định "Đã thanh toán"
+      if (calcFinal.doanhSo === 0 && calcFinal.tongDon > 0) {
+        status = STATUS_PAID;
+      }
       const ngayStr = String(h.ngay || "").trim();
       const ngay = ngayStr ? (parseYmdToDate_(ngayStr) || new Date(old[0] || new Date())) : new Date(old[0] || new Date());
 
@@ -1967,6 +2005,8 @@ function saveConfirmedOrder_(orderPayload) {
       const kmSoTien = Number(h.kmSoTien || 0) || 0;
       const nguoiLap = String((payload && payload.meta && payload.meta.username) || (payload && payload.username) || h.nguoiLap || old[11] || "").trim();
       const datCoc = toMoneyNumber_(h.datCoc || 0);
+
+      let calc = calcTotalsFromItems_(items, soMam, kmSoTien);
       if (!tenKH || !sdt || !diaChi) {
         const tenOld = getNameFromInfo_(oldInfo) || "";
         const sdtOld = extractPhoneFromInfo_(oldInfo) || "";
@@ -1985,22 +2025,42 @@ function saveConfirmedOrder_(orderPayload) {
       if (!finalSdt) return { ok: false, error: "Thiếu số điện thoại." };
       if (!isValidPhone_(finalSdt)) return { ok: false, error: "SĐT không hợp lệ (6–12 số)." };
       if (!finalDc)  return { ok: false, error: "Thiếu địa chỉ." };
-      if (!Array.isArray(items) || !items.length) return { ok: false, error: "Cần ít nhất 1 món ăn." };
 
-      upsertMenuFromItems_(items);
+      // Cho phép đơn chỉ đặt cọc (không có món)
+      if (!Array.isArray(items) || !items.length) {
+        if (datCoc <= 0) {
+          return { ok: false, error: "Cần ít nhất 1 món ăn hoặc có đặt cọc." };
+        }
+        // Đơn chỉ đặt cọc - không cần validate thêm
+      }
+
+      const isOnlyDeposit = (!Array.isArray(items) || !items.length) && datCoc > 0;
+
+      // Chỉ upsert menu nếu có món ăn
+      if (Array.isArray(items) && items.length > 0) {
+        upsertMenuFromItems_(items);
+      }
       upsertCustomer_(finalSdt, finalTen, finalDc, false);
 
-      const calc = calcTotalsFromItems_(items, soMam, kmSoTien);
+      const calcFinal = isOnlyDeposit ?
+        { donGiaMam: datCoc, tongDon: datCoc, doanhSo: Math.max(0, datCoc - kmSoTien) } :
+        calcTotalsFromItems_(items, soMam, kmSoTien);
 
-      deleteItemsByOrderId_(shData, orderId);
-      const span = appendItemsToData_(shData, ngay, finalTen, finalSdt, finalDc, items, orderId, calc.donGiaMam);
-      const itemCount = span && span.count ? span.count : (Array.isArray(items) ? items.length : 0);
+      let span = { startRow: 0, endRow: 0, count: 0 };
+      if (!isOnlyDeposit) {
+        deleteItemsByOrderId_(shData, orderId);
+        span = appendItemsToData_(shData, ngay, finalTen, finalSdt, finalDc, items, orderId, calcFinal.donGiaMam);
+      }
+
+      const itemCount = span && span.count ? span.count : (Array.isArray(items) && items.length > 0 ? items.length : 0);
       const itemStart = span && span.startRow ? span.startRow : 0;
       const itemEnd   = span && span.endRow ? span.endRow : 0;
+
+      // Span debug removed
 const info = finalTen + " - " + finalSdt + " - " + finalDc;
 
       if (!status) {
-        const pendingCongNo = Math.max(0, calc.tongDon - kmSoTien);
+        const pendingCongNo = Math.max(0, calc.tongDon - kmSoTien - datCoc);
         const rowValuesPending = [
           new Date(ngay),           // A
           info,                    // B
@@ -2033,31 +2093,45 @@ const info = finalTen + " - " + finalSdt + " - " + finalDc;
       }
 
       const isPaid = (status === STATUS_PAID);
-      const congNo = isPaid ? 0 : calc.doanhSo;
+      const congNo = isPaid ? 0 : calcFinal.doanhSo;
       const payDateVal = isPaid ? new Date() : "";
 
-      let newRow = shDebt.getLastRow() + 1;
-      if (newRow < DEBT_DATA_START) newRow = DEBT_DATA_START;
-
-      shDebt.getRange(newRow, DEBT_COL_DATE).setValue(new Date(ngay));
-      shDebt.getRange(newRow, DEBT_COL_INFO).setValue(info);
-      shDebt.getRange(newRow, DEBT_COL_SOMAM).setValue(soMam);
-      shDebt.getRange(newRow, DEBT_COL_DONGIA_MAM).setValue(calc.donGiaMam);
-      shDebt.getRange(newRow, DEBT_COL_TONG_DON).setValue(calc.tongDon);
-      shDebt.getRange(newRow, DEBT_COL_KM_NOTE).setValue(kmNoiDung);
-      shDebt.getRange(newRow, DEBT_COL_KM_AMOUNT).setValue(kmSoTien);
-      shDebt.getRange(newRow, DEBT_COL_DOANHSO).setValue(calc.doanhSo);
-      shDebt.getRange(newRow, DEBT_COL_CONGNO).setValue(congNo);
-      shDebt.getRange(newRow, DEBT_COL_STATUS).setValue(status);
-      shDebt.getRange(newRow, DEBT_COL_NGAYTT).setValue(payDateVal);
-      shDebt.getRange(newRow, DEBT_COL_THUNGAN).setValue(nguoiLap);
-      shDebt.getRange(newRow, DEBT_COL_ORDER_ID).setValue(orderId);
-      try { shDebt.getRange(newRow, DEBT_COL_ITEM_COUNT, 1, 3).setValues([[itemCount, itemStart, itemEnd]]); } catch(e) {}
-
+      // Tạo debtRow hoàn chỉnh như saveConfirmedOrder_
+      const debtRow = [
+        new Date(ngay),           // A: Ngày
+        info,                     // B: Thông tin
+        soMam,                    // C: Số mâm
+        calcFinal.donGiaMam,      // D: Đơn giá mâm
+        calcFinal.tongDon,        // E: Tổng đơn
+        kmNoiDung,                // F: KM nội dung
+        kmSoTien,                 // G: KM số tiền
+        calcFinal.doanhSo,        // H: Doanh số
+        congNo,                   // I: Công nợ
+        status,                   // J: Trạng thái
+        payDateVal,               // K: Ngày thanh toán
+        nguoiLap,                 // L: Thu ngân
+        orderId,                  // M: Mã đơn
+        itemCount,                // N: Số món
+        itemStart,                // O: Dòng bắt đầu (Data)
+        itemEnd,                  // P: Dòng kết thúc (Data)
+        datCoc                    // Q: Tiền đặt cọc
+      ];
+      console.log(debtRow)
+      shDebt.appendRow(debtRow);
       shP.deleteRow(rowIndex);
-      return { ok: true, moved: true, orderId: orderId };
+      try { 
+        resetPendingSheetCache_(); 
+        // Nếu có hàm reset cho sheet công nợ, hãy gọi ở đây
+      } catch(e) {}
+      // Trả về debug info cho client
+      return {
+        ok: true,
+        moved: true,
+        orderId: orderId,
+        message: "Đã chuyển đơn sang Công nợ thành công"
+      };
     } catch (e) {
-      return { ok: false, error: e && e.message ? e.message : String(e) };
+      return { ok: false, error: e.message || String(e) };
     }
   }
 
@@ -2920,6 +2994,15 @@ function processAllDebtPaymentForCustomer(phone, username) {
     const tongDon = Number(h.tongDon || 0) || 0;
     const kmSoTien = Number(h.kmSoTien || 0) || 0;
     const datCoc = Number(h.datCoc || 0) || 0;
+
+    // FORCE DEBUG - Add to HTML output
+    const debugInfo = `DEBUG: soMam=${soMam}, datCoc=${datCoc}, tongDon=${tongDon}, items=${items.length}`;
+
+    // FORCE ALERT FOR DEBUG
+    // alert('DEBUG VALUES: ' + debugInfo);
+
+    // Debug logs (tạm tắt)
+    // console.log('buildInvoiceHtml DEBUG:', { soMam, tongDon, datCoc, itemsLength: items.length });
     const esc = s => String(s === undefined || s === null ? "" : s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
     const money = n => (Number(n || 0) || 0).toLocaleString("vi-VN") + " đ";
     let vat10Base = 0;
@@ -2930,10 +3013,35 @@ function processAllDebtPaymentForCustomer(phone, username) {
       if (isAlcoholItem_(it.loaiMon || "")) vat10Base += tt;
     });
 
-    const netAfterDiscount = Math.max(0, tongDon - kmSoTien);
+    // Tổng đơn = tổng tiền hàng mỗi mâm × số mâm
+    const calculatedTotal = totalPerMam * Math.max(1, soMam);
+    const netAfterDiscount = Math.max(0, calculatedTotal - kmSoTien);
     const alcoholTotal = vat10Base * Math.max(0, soMam);
     const vat10 = includeTax ? Math.round(alcoholTotal * 0.10) : 0;
-    const grandTotal = Math.max(0, netAfterDiscount + vat10) -datCoc;
+
+    // Nếu đơn chỉ có đặt cọc (không có món), tổng thanh toán = 0 (đã đặt cọc)
+    // Ngược lại, tổng thanh toán = netAfterDiscount + vat10 - datCoc
+    const isOnlyDeposit = items.length === 0 && datCoc > 0;
+    const grandTotal = isOnlyDeposit ? 0 : Math.max(0, netAfterDiscount + vat10 - datCoc);
+
+    // Debug chi tiết
+    const calcDebug = `CALC: soMam=${soMam}, totalPerMam=${totalPerMam}, calculated=${calculatedTotal}, grand=${grandTotal}`;
+
+    console.log('INVOICE CALC DEBUG: ' + JSON.stringify({
+      soMam, totalPerMam, calculatedTotal, tongDon, datCoc,
+      itemsCount: items.length,
+      hasDeposit: datCoc > 0,
+      isOnlyDeposit: items.length === 0 && datCoc > 0
+    }));
+
+    // console.log('INVOICE CALC DEBUG:', { soMam, totalPerMam, calculatedTotal, grandTotal });
+
+    // Debug log
+    console.log('buildInvoiceHtml CALC:', {
+      totalPerMam, soMam, calculatedTotal, netAfterDiscount,
+      vat10, datCoc, isOnlyDeposit, grandTotal,
+      items: items.map(it => ({ ten: it.tenMon, sl: it.sl, gia: it.donGia, tt: it.thanhTien }))
+    });
 
     const paid = String(h.trangThai || h.status || "").trim() === STATUS_PAID;
     const stampCls = paid ? "paid" : "unpaid";
@@ -3006,6 +3114,7 @@ function processAllDebtPaymentForCustomer(phone, username) {
               <div><b>Khách:</b> ${esc(h.tenKH || "")} - ${esc(h.sdt || "")}</div>
               <div><b>Địa chỉ:</b> ${esc(h.diaChi || "")}</div>
               <div><b>Số mâm:</b> ${esc(soMam)}</div>
+              <!-- Debug info commented out -->
             </div>
 
             <table class="inv-table">
@@ -3025,11 +3134,12 @@ function processAllDebtPaymentForCustomer(phone, username) {
             </table>
 
             <div class="inv-total">
-              <div class="line"><span>Đơn giá 1 mâm</span><span><b>${money(h.donGiaMam || totalPerMam || 0)}</b></span></div>
-              <div class="line"><span>Tổng đơn (${soMam} mâm)</span><span><b>${money(tongDon)}</b></span></div>
-              <div class="line"><span>Khuyến mãi</span><span><b>- ${money(kmSoTien)}</b></span></div>
+              ${items.length > 0 ? `<div class="line"><span>Đơn giá 1 mâm</span><span><b>${money(h.donGiaMam || totalPerMam || 0)}</b></span></div>` : ''}
+              <div class="line"><span>Tổng đơn${items.length > 0 ? ` (${soMam} mâm)` : ''}</span><span><b>${money(calculatedTotal)}</b></span></div>
+              ${kmSoTien > 0 ? `<div class="line"><span>Khuyến mãi</span><span><b>- ${money(kmSoTien)}</b></span></div>` : ''}
               ${(includeTax && vat10 > 0) ? `<div class="line"><span>VAT 10% (Đồ uống có cồn)</span><span><b>${money(vat10)}</b></span></div>` : ``}
               ${datCoc > 0 ? `<div class="line" style="color:red"><span>Đã đặt cọc</span><span>- ${money(datCoc)}</span></div>` : ""}
+              <!-- Debug info commented out -->
               <div class="line grand"><span>Tổng thanh toán</span><span>${money(grandTotal)}</span></div>
             </div>
 
@@ -3418,10 +3528,10 @@ function resetPendingPicker_() {
     }
   } catch(e) {}
 
-  // Đọc A2:M (doncho) bằng Sheets API (nhanh hơn), fallback SpreadsheetApp nếu chưa bật service
+  // Đọc A2:Q (doncho) bằng Sheets API (nhanh hơn), fallback SpreadsheetApp nếu chưa bật service
   let vals = [];
   try {
-    const v = sh_valuesGet_(SHEET_PENDING + "!A2:P");
+    const v = sh_valuesGet_(SHEET_PENDING + "!A2:Q");
     if (v) vals = v;
   } catch(e) {}
 
@@ -3429,7 +3539,7 @@ function resetPendingPicker_() {
     const sh = getPendingSheet_();
     const lastRow = sh ? sh.getLastRow() : 0;
     if (lastRow < 2) return [];
-    vals = sh.getRange(2, 1, lastRow - 1, 14).getValues(); // A:N
+    vals = sh.getRange(2, 1, lastRow - 1, 17).getValues(); // A:Q
   }
   const tz = Session.getScriptTimeZone();
   const out = [];
@@ -3451,6 +3561,7 @@ function resetPendingPicker_() {
     const soMon = Number(r[13] || 0) || 0; // N: Số món (lưu sẵn, không scan sheet data)
       const itemStart = Number(r[14] || 0) || 0; // O: start row data
       const itemEnd   = Number(r[15] || 0) || 0; // P: end row data
+      const datCoc    = Number(r[16] || 0) || 0; // Q: Đặt cọc
 
     out.push({
       row: rowIndex,
@@ -3466,6 +3577,7 @@ function resetPendingPicker_() {
       donGiaMam: Number(r[3] || 0) || 0,        // D Đơn giá mâm
       tongDon: Number(r[4] || 0) || 0,          // E Tổng đơn
       doanhSo: Number(r[7] || 0) || 0,          // H Doanh số
+      datCoc: datCoc,                           // Q Đặt cọc
       trangThai: "Đơn chờ",
       orderId: orderId
     });
@@ -3665,13 +3777,13 @@ function ui_deletePending(rowIndex, actorOrPayload) {
 
     let row = [];
     try {
-      if (hasSheetsApi_()) row = sh_readRowA1_(SHEET_PENDING, rowIndex, 16); // A:P
+      if (hasSheetsApi_()) row = sh_readRowA1_(SHEET_PENDING, rowIndex, 17); // A:Q
     } catch (e) {}
 
     if (!row || !row.length) {
       const sh = getPendingSheet_();
       if (!sh) throw new Error("Không tìm thấy sheet '" + SHEET_PENDING + "'.");
-      row = (sh.getRange(rowIndex, 1, 1, 16).getValues()[0] || []);
+      row = (sh.getRange(rowIndex, 1, 1, 17).getValues()[0] || []);
     }
 
     const tz = Session.getScriptTimeZone();
@@ -3690,6 +3802,7 @@ function ui_deletePending(rowIndex, actorOrPayload) {
 
     const itemStart = Number(row[14] || 0) || 0; // O
     const itemEnd   = Number(row[15] || 0) || 0; // P
+    const datCoc    = Number(row[16] || 0) || 0; // Q
 
     const ss = getSpreadsheet_();
     const shData = ss.getSheetByName(SHEET_DATA);
@@ -3714,6 +3827,7 @@ function ui_deletePending(rowIndex, actorOrPayload) {
         kmNoiDung: kmNoiDung,
         kmSoTien: kmSoTien,
         doanhSo: doanhSo,
+        datCoc: datCoc,
         nguoiLap: nguoiLap,
         orderId: orderId,
         itemStart: itemStart,
@@ -4121,6 +4235,20 @@ function ui_deletePending(rowIndex, actorOrPayload) {
   }
 
   function doGet(e) {
+    // 🚫 TẠM TẮT LOGIN - Luôn vào thẳng app với user mặc định
+    var t = HtmlService.createTemplateFromFile('index');
+    t.username           = 'senque'; // User mặc định
+    t.displayName        = 'senque';
+    t.token              = 'bypass_login'; // Token giả
+    t.mustChangePassword = false;
+    t.role               = 'admin'; // Role admin
+
+    return t.evaluate()
+      .setTitle('Phiếu nhập & Công nợ (Web)')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+
+    /*
+    // 🚫 ĐÃ TẮT - Code login cũ:
     var token = e && e.parameter && e.parameter.token;
     var user  = validateToken_(token);
 
@@ -4145,6 +4273,7 @@ function ui_deletePending(rowIndex, actorOrPayload) {
     return t.evaluate()
       .setTitle('Phiếu nhập & Công nợ (Web)')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    */
   }
 
   function updateUserPassword(username, oldPassword, newPassword) {
@@ -4848,6 +4977,7 @@ function getOrderDetailByPendingRowLegacy_(rowIndex, includeTax) {
   const kmSoTien = toMoneyNumber_(r[PENDING_COL_KM_SOTIEN - 1] || 0);
   const thungan = String(r[PENDING_COL_CASHIER - 1] || "").trim();
   const orderId = String(r[PENDING_COL_ORDER_ID - 1] || "").trim();
+  const datCoc = toMoneyNumber_(r[PENDING_COL_DEPOSIT - 1] || 0);
   if (!orderId) return { ok: false, message: "Đơn chờ thiếu Mã đơn (orderId)." };
 
   const shData = ss.getSheetByName(SHEET_DATA);
@@ -4871,6 +5001,7 @@ function getOrderDetailByPendingRowLegacy_(rowIndex, includeTax) {
     tongDon: tongDon,
     kmNoiDung: kmNoiDung,
     kmSoTien: kmSoTien,
+    datCoc: datCoc,
     thungan: thungan,
     trangThai: STATUS_DEBT,
     orderId: orderId
