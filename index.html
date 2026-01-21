@@ -4643,7 +4643,8 @@ const trangThai = String(h.trangThai || h.status || "").trim();
 
   const subTotal = Math.round(rawSubTotal);
   const kmApplied = Math.min(Math.max(0, km), rawSubTotal);
-
+  const datCoc = Number(h.datCoc || 0);
+  const soMam = Number(h.soMam || 1) || 1;
   // Phân bổ KM theo tỷ lệ từng dòng, tách base 10% / 8%
   let base10 = 0, base8 = 0;
   items.forEach(it => {
@@ -4665,14 +4666,14 @@ const trangThai = String(h.trangThai || h.status || "").trim();
   base10 = Math.round(base10);
   base8  = Math.round(base8);
 
-  const tienChuaThue = Math.round(base10 + base8);
-  const vat10 = Math.round(base10 * 0.10);
-  const vat8  = Math.round(base8  * 0.08);
-  const tienThue = Math.round(vat10 + vat8);
+  const tienChuaThue = Math.round(base10 + base8)*soMam;
+  const vat10 = Math.round(base10 * 0.10)*soMam;
+  const vat8  = Math.round(base8  * 0.08)*soMam;
+  const tienThue = Math.round(vat10 + vat8)*soMam;
 
   // Tổng: có thuế / không thuế
-  const grandWithTax = Math.round(tienChuaThue + tienThue);
-  const grandNoTax   = Math.round(Math.max(0, rawSubTotal - kmApplied));
+  const grandWithTax = Math.round(tienChuaThue + tienThue)*soMam -datCoc;
+  const grandNoTax   = Math.round(Math.max(0, rawSubTotal - kmApplied))*soMam-datCoc;
   const finalGrand   = enableTax ? grandWithTax : grandNoTax;
 
   const fmt = (n) => formatMoney(Number(n) || 0);
@@ -4681,7 +4682,7 @@ const trangThai = String(h.trangThai || h.status || "").trim();
   const tenKH = String(h.tenKH || "").trim();
   const sdt = String(h.sdt || "").trim();
   const diaChi = String(h.diaChi || "").trim();
-  const soMam = Number(h.soMam || 0) || 0;
+ 
 
   let html = "";
   html += `<div class="invoice">`;
@@ -4743,6 +4744,10 @@ const trangThai = String(h.trangThai || h.status || "").trim();
           "<div class='line minor' style='display:flex;justify-content:space-between;padding:2px 0;'><span>Thuế (10%)</span><span>" + fmt(vat10) + "đ</span></div>" +
           "<div class='line minor' style='display:flex;justify-content:space-between;padding:2px 0;'><span>Thuế (8%)</span><span>" + fmt(vat8) + "đ</span></div>" +
           "<div class='line grand' style='display:flex;justify-content:space-between;padding:6px 0 0;border-top:2px solid #111;margin-top:4px;font-size:14px;font-weight:900;'>" +
+          ${datCoc > 0 ? `
+  <div class="line major" style="display:flex;justify-content:space-between;padding:3px 0;">
+    <span><strong>Tiền đặt cọc</strong></span><span>- ${formatMoney(datCoc)}đ</span>
+  </div>` : ""} +
             "<span><strong>Tổng thanh toán</strong></span><span class='amt'>" + fmt(grandWithTax) + "đ</span></div>" +
         "</div>";
   } else{
@@ -4755,6 +4760,7 @@ const trangThai = String(h.trangThai || h.status || "").trim();
       <span>Khuyến mãi</span><span>- ${fmt(kmApplied)}đ</span>
     </div>` : ""}
     ${taxHtml}
+    ${datCoc > 0 ? `<div class="line major" style="display:flex;justify-content:space-between;padding:3px 0;"><span><strong>Tiền đặt cọc</strong></span><span>- ${formatMoney(datCoc)}đ</span></div>` : ""}
     <div class="line grand" style="display:flex;justify-content:space-between;border-top:2px solid #111;margin-top:4px;padding-top:4px;font-size:14px;font-weight:900;">
       <span><strong>Tổng thanh toán</strong></span><span class="amt">${fmt(finalGrand)}đ</span>
     </div>
