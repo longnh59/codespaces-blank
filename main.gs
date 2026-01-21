@@ -2809,7 +2809,7 @@ function processAllDebtPaymentForCustomer(phone, username) {
           const rNorm  = normalizePhone_(rPhone);
           if (!rNorm || rNorm !== phoneNorm) return;
 
-          if (!custName) custName = (parts[0] || "").trim();
+          if (!custName) custName = getNameFromInfo_(info) || "";
           if (!displayPhone) displayPhone = rPhone;
 
           const tsStr = String(row[0] || "");
