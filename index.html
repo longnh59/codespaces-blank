@@ -977,16 +977,16 @@ padding:10px 12px;
   .row-actions{display:flex; gap:8px; justify-content:center}
 
 .invoice{font-family:'Hanken Grotesk'; color:#111; line-height:1.25}
-.inv-head{position:relative; text-align:center; padding:10px 10px 14px}
+.inv-head{position:relative; padding:10px 10px 14px}
 .inv-brand{font-weight:900; font-size:18px; letter-spacing:.5px}
-.inv-sub{font-size:12px; margin-top:2px}
+.inv-sub{font-size:18px; margin-top:2px;text-align:center}
 .inv-stamp{position:absolute; right:8px; top:8px; padding:5px 9px; border-radius:10px; font-weight:900; border:2px solid; font-size:12px}
 .inv-stamp.paid{color:#16a34a; border-color:#16a34a}
 .inv-stamp.unpaid{color:#ef4444; border-color:#ef4444}
 .inv-stamp.debt{color:#f59e0b; border-color:#f59e0b}
 .inv-title{font-weight:900; font-size:14px; margin-top:6px}
-.inv-no{font-weight:800; margin-top:6px}
-.inv-meta{font-size:12px; padding:0 6px 10px; display:grid; gap:4px; text-align:left}
+.inv-no{ margin-top:6px}
+.inv-meta{font-size:15px; padding:0 6px 10px; display:grid; gap:4px; text-align:left}
 /* Giữ đủ 4 góc viền cho bảng */
 .inv-table-wrap{
   overflow: hidden; /* quan trọng: giữ góc bo không bị “cụt” */
@@ -997,10 +997,10 @@ padding:10px 12px;
 .status-pending { background:#eef2ff; color:#3730a3; border:1px solid #c7d2fe; }
 
 
-.inv-table th:last-child, .inv-table td:last-child{ border-right: 0; }
+/* .inv-table th:last-child, .inv-table td:last-child{ border-right: 0; } */
 .inv-table tr:last-child td{ border-bottom: 0; }
 
-.inv-table{width:100%; border-collapse:collapse; font-size:12px; border-radius:10px !important;border: 1px solid black;overflow:auto}
+.inv-table{width:100%; border-collapse:collapse; font-size:14px; border-radius:10px !important;border: 1px solid black;overflow:auto}
 .inv-table th,.inv-table td{border:1px solid #111; padding:5px; vertical-align:top}
 .inv-table th{text-align:left; font-weight:900}
 
@@ -1015,10 +1015,10 @@ padding:10px 12px;
 
 @media print{
   .inv-wrap, .inv-meta, .inv-table, .inv-table th, .inv-table td{ line-height:1.2 !important; }
-  .inv-table th,.inv-table td{ padding:4px !important; font-size:11px !important; }
+  .inv-table th,.inv-table td{ padding:4px !important; font-size:14px !important; border: 1px solid black;}
   .inv-title{ font-size:14px !important; margin-top:4px !important; }
   .inv-no{ margin-top:2px !important; }
-  .inv-meta{ font-size:11px !important; gap:2px !important; }
+  .inv-meta{ gap:2px !important; }
 
   html, body{ margin:0 !important; padding:0 !important; height:auto !important; }
   body > *:not(#printInvoiceOverlay){ display:none !important; } /* QUAN TRỌNG: không để visibility */
@@ -3328,7 +3328,7 @@ function lockAppForMustChange_(lock) {
         const diaChi   = document.getElementById("diaChi").value.trim();
         const kmNoiDung = (document.getElementById("kmNoiDung")?.value || "").trim();
         const kmSoTien  = parseMoney(document.getElementById("kmSoTien")?.value || 0);
-
+        const datCoc  = parseMoney(document.getElementById("datCoc")?.value || 0);
         const tbody = document.querySelector("#tblMon tbody");
         const items = [];
         Array.from(tbody.rows).forEach(tr => {
@@ -3348,7 +3348,7 @@ function lockAppForMustChange_(lock) {
         });
 
         const payload = {
-          header: { ngay, tenKH, sdt, diaChi, soMam, nguoiLap, trangThai, kmNoiDung, kmSoTien },
+          header: { ngay, tenKH, sdt, diaChi, soMam, nguoiLap, trangThai, kmNoiDung, kmSoTien ,datCoc},
           items
         };
 
@@ -4640,11 +4640,11 @@ const trangThai = String(h.trangThai || h.status || "").trim();
     const tt = Number(it.thanhTien || (sl * dg) || 0) || 0;
     return s + Math.max(0, tt);
   }, 0);
-
-  const subTotal = Math.round(rawSubTotal);
   const kmApplied = Math.min(Math.max(0, km), rawSubTotal);
   const datCoc = Number(h.datCoc || 0);
   const soMam = Number(h.soMam || 1) || 1;
+  const subTotal = Math.round(rawSubTotal)*soMam;
+  
   // Phân bổ KM theo tỷ lệ từng dòng, tách base 10% / 8%
   let base10 = 0, base8 = 0;
   items.forEach(it => {
@@ -4663,17 +4663,17 @@ const trangThai = String(h.trangThai || h.status || "").trim();
     else base8 += base;
   });
 
-  base10 = Math.round(base10);
-  base8  = Math.round(base8);
+  base10 = Math.round(base10)*soMam;
+  base8  = Math.round(base8)*soMam;
 
-  const tienChuaThue = Math.round(base10 + base8)*soMam;
-  const vat10 = Math.round(base10 * 0.10)*soMam;
-  const vat8  = Math.round(base8  * 0.08)*soMam;
-  const tienThue = Math.round(vat10 + vat8)*soMam;
+  const tienChuaThue = Math.round(base10 + base8);
+  const vat10 = Math.round(base10 * 0.10);
+  const vat8  = Math.round(base8  * 0.08);
+  const tienThue = Math.round(vat10 + vat8);
 
   // Tổng: có thuế / không thuế
-  const grandWithTax = Math.round(tienChuaThue + tienThue)*soMam -datCoc;
-  const grandNoTax   = Math.round(Math.max(0, rawSubTotal - kmApplied))*soMam-datCoc;
+  const grandWithTax = Math.round(tienChuaThue + tienThue -datCoc);
+  const grandNoTax   = Math.round(Math.max(0, rawSubTotal*soMam - kmApplied-datCoc));
   const finalGrand   = enableTax ? grandWithTax : grandNoTax;
 
   const fmt = (n) => formatMoney(Number(n) || 0);
@@ -4688,25 +4688,35 @@ const trangThai = String(h.trangThai || h.status || "").trim();
   html += `<div class="invoice">`;
 
   html += `<div class="inv-head">
-    <div class="inv-brand">TẠI GIA SEN QUÊ</div>
-    <div class="inv-sub">HÓA ĐƠN BÁN HÀNG</div>
+    <div class="inv-brand">CĂNG TIN VCCI</div>
+    <div> MST: 2900893818 </div>
+    <div> Số 1, Nguyễn Phong Sắc, TP Vinh, NA</div>
+    <div> Hotline: 0901.07.08.08 - 0943.800.008</div>
+    <br>
+    <div class="inv-sub"><b>HÓA ĐƠN THANH TOÁN</b></div>
+    <br>
     <div class="inv-stamp ${stampCls}">${escHtml(stampText)}</div>
-    <div class="inv-title">HÓA ĐƠN</div>
-    <div class="inv-no">Số hóa đơn: <b>${escHtml(invoiceNo || "(chưa có)")}</b></div>
-  </div>`;
-
-  html += `<div class="inv-meta">
-    <div><b>Ngày:</b> ${escHtml(dateStr || "")}</div>
+    <div style="justify-content: start;    display: flex;    align-items: baseline; gap:50px"">
+    <div class="inv-no"> <b>Số hóa đơn: ${escHtml(invoiceNo || "(chưa có)")}</b>
     ${soMam ? `<div><b>Số mâm:</b> ${soMam}</div>` : ""}
+    <div><b>Thu ngân:</b> <?= displayName ?> </div>
+    </div>
+    <div class="inv-meta">
+    <div><b>Ngày:</b> ${escHtml(dateStr || "")}</div>
     ${tenKH ? `<div><b>Khách:</b> ${escHtml(tenKH)}</div>` : ""}
     ${sdt ? `<div><b>SĐT:</b> ${escHtml(sdt)}</div>` : ""}
     ${diaChi ? `<div><b>Đ/c:</b> ${escHtml(diaChi)}</div>` : ""}
+    </div>   
+    </div>
   </div>`;
 
+  // html += ``;
+
   // Items
-  html += `<table class="inv-table" style="width:100%; border-collapse:collapse; font-size:12px; margin-top:6px;">
+  html += `<table class="inv-table" style="width:100%; border-collapse:collapse; font-size:14px; margin-top:6px;">
     <thead>
       <tr>
+        <th style="text-align:center; border-bottom:1px solid #111; padding:4px 2px; width:30px;">STT</th>
         <th style="text-align:left; border-bottom:1px solid #111; padding:4px 2px;">Món</th>
         <th style="text-align:right; border-bottom:1px solid #111; padding:4px 2px; width:44px;">SL</th>
         <th style="text-align:right; border-bottom:1px solid #111; padding:4px 2px; width:74px;">Đơn giá</th>
@@ -4715,7 +4725,7 @@ const trangThai = String(h.trangThai || h.status || "").trim();
     </thead>
     <tbody>`;
 
-  items.forEach(it => {
+  items.forEach((it,index) => {
     const ten = String(it.tenMon || it.ten || it.name || "").trim();
     const sl = Number(it.sl || 0) || 0;
     const dg = Number(it.donGia || 0) || 0;
@@ -4723,6 +4733,7 @@ const trangThai = String(h.trangThai || h.status || "").trim();
 
     if (!ten) return;
     html += `<tr>
+      <td style="padding:3px 2px; text-align:center; border-bottom:1px dashed #bbb;">${index + 1}</td>
       <td style="padding:3px 2px; border-bottom:1px dashed #bbb;">${escHtml(ten)}</td>
       <td style="padding:3px 2px; text-align:right; border-bottom:1px dashed #bbb;">${sl}</td>
       <td style="padding:3px 2px; text-align:right; border-bottom:1px dashed #bbb;">${fmt(dg)} đ</td>
@@ -4735,24 +4746,24 @@ const trangThai = String(h.trangThai || h.status || "").trim();
   // Totals
   let taxHtml = "";
     if (enableTax) {
-    html += "<div class='inv-total' style='padding:8px 6px 0; font-size:12px; line-height:1.15;'>" +
-          "<div class='line major' style='display:flex;justify-content:space-between;padding:3px 0;'><span><strong>Tiền hàng</strong></span><span>" + fmt(subTotal) + "đ</span></div>" +
-          "<div class='line major' style='display:flex;justify-content:space-between;padding:3px 0;'><span><strong>Tiền chưa thuế</strong></span><span>" + fmt(tienChuaThue) + "đ</span></div>" +
-          "<div class='line minor' style='display:flex;justify-content:space-between;padding:2px 0;'><span>Trước thuế (10%)</span><span>" + fmt(base10) + "đ</span></div>" +
-          "<div class='line minor' style='display:flex;justify-content:space-between;padding:2px 0;'><span>Trước thuế (8%)</span><span>" + fmt(base8) + "đ</span></div>" +
-          "<div class='line major' style='display:flex;justify-content:space-between;padding:3px 0;'><span><strong>Tiền thuế</strong></span><span>" + fmt(tienThue) + "đ</span></div>" +
-          "<div class='line minor' style='display:flex;justify-content:space-between;padding:2px 0;'><span>Thuế (10%)</span><span>" + fmt(vat10) + "đ</span></div>" +
-          "<div class='line minor' style='display:flex;justify-content:space-between;padding:2px 0;'><span>Thuế (8%)</span><span>" + fmt(vat8) + "đ</span></div>" +
-          "<div class='line grand' style='display:flex;justify-content:space-between;padding:6px 0 0;border-top:2px solid #111;margin-top:4px;font-size:14px;font-weight:900;'>" +
-          ${datCoc > 0 ? `
-  <div class="line major" style="display:flex;justify-content:space-between;padding:3px 0;">
-    <span><strong>Tiền đặt cọc</strong></span><span>- ${formatMoney(datCoc)}đ</span>
-  </div>` : ""} +
+    html += "<div class='inv-total' style='padding:8px 6px 0; font-size:14px; line-height:1.15;display: grid;justify-content:end'>" +
+          "<div class='line major' style='display:flex;justify-content:space-between;padding:3px 0;'><span><strong><i>Tiền hàng</i></strong></span><span>" + fmt(subTotal) + "đ</span></div>" +
+          "<div class='line major' style='display:flex;justify-content:space-between;padding:3px 0;'><span><strong><i>Tiền chưa thuế</i></strong></span><span>" + fmt(tienChuaThue) + "đ</span></div>" +
+          "<div class='line minor' style='display:flex;justify-content:space-between;padding:2px 0;'><span>&ensp;Trước thuế (10%)</span><span>" + fmt(base10) + "đ</span></div>" +
+          "<div class='line minor' style='display:flex;justify-content:space-between;padding:2px 0;'><span>&ensp;Trước thuế (8%)</span><span>" + fmt(base8) + "đ</span></div>" +
+          "<div class='line major' style='display:flex;justify-content:space-between;padding:3px 0;'><span><strong><i>Tiền thuế</i></strong></span><span>" + fmt(tienThue) + "đ</span></div>" +
+          "<div class='line minor' style='display:flex;justify-content:space-between;padding:2px 0;'><span>&ensp;Thuế (10%)</span><span>" + fmt(vat10) + "đ</span></div>" +
+          "<div class='line minor' style='display:flex;justify-content:space-between;padding:2px 0;'><span>&ensp;Thuế (8%)</span><span>" + fmt(vat8) + "đ</span></div>" +
+          `${datCoc > 0 ? `
+          <div class="line major" style="display:flex;justify-content:space-between;padding:3px 0;">
+            <span><strong><i>Tiền đặt cọc</i></strong></span><span>- ${formatMoney(datCoc)}đ</span>
+          </div>` : ""}` +
+          "<div class='line grand' style='display:flex;gap: 30px;justify-content:space-between;padding:6px 0 0;border-top:2px solid #111;margin-top:4px;font-size:15px;font-weight:900;'>" +
             "<span><strong>Tổng thanh toán</strong></span><span class='amt'>" + fmt(grandWithTax) + "đ</span></div>" +
         "</div>";
   } else{
 
-  html += `<div class="inv-total" style="padding:8px 6px 0; font-size:12px; line-height:1.15;">
+  html += `<div class="inv-total" style="padding:8px 6px 0; font-size:14px; line-height:1.15;display: grid">
     <div class="line major" style="display:flex;justify-content:space-between;margin:2px 0;">
       <span><strong>Tiền hàng</strong></span><span>${fmt(subTotal)}đ</span>
     </div>
@@ -4761,7 +4772,7 @@ const trangThai = String(h.trangThai || h.status || "").trim();
     </div>` : ""}
     ${taxHtml}
     ${datCoc > 0 ? `<div class="line major" style="display:flex;justify-content:space-between;padding:3px 0;"><span><strong>Tiền đặt cọc</strong></span><span>- ${formatMoney(datCoc)}đ</span></div>` : ""}
-    <div class="line grand" style="display:flex;justify-content:space-between;border-top:2px solid #111;margin-top:4px;padding-top:4px;font-size:14px;font-weight:900;">
+    <div class="line grand" style="gap: 30px;display:flex;justify-content:space-between;border-top:2px solid #111;margin-top:4px;padding-top:4px;font-size:15px;font-weight:900;">
       <span><strong>Tổng thanh toán</strong></span><span class="amt">${fmt(finalGrand)}đ</span>
     </div>
   </div>`;}
@@ -6396,6 +6407,7 @@ function renderPendingRight(rows) {
     const datCoc = Number(r.datCoc || 0);
     const isOnlyDeposit = (Number(r.soMon || 0) === 0 && datCoc > 0);
     const status = isOnlyDeposit ? "Đặt cọc" : (r.status || "Đơn chờ");
+    const colorstatus =isOnlyDeposit ? 'bisque' : 'rgba(15,118,110,.08)';
     const mamText = `${soMam}${soMon ? ` (${soMon} món)` : ""}`;
     const tong = isOnlyDeposit ? datCoc : (r.tongDon || 0);
     const actionBtns = `
@@ -6411,7 +6423,7 @@ function renderPendingRight(rows) {
       <td>${escapeHtml(info)}</td>
       <td style="text-align:center;">${escapeHtml(mamText)}</td>
       <td style="text-align:right;">${formatMoney(tong)} đ</td>
-      <td><span class="status-pill status-pending">${escapeHtml(status)}</span></td>
+      <td><span class="status-pill status-pending" style="background:${colorstatus} !important">${escapeHtml(status)}</span></td>
       <td style="text-align:center; white-space:nowrap;">
         ${actionBtns}
       </td>
