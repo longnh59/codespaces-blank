@@ -1216,9 +1216,11 @@ padding:10px 12px;
         <button type="button" class="secondary" style="background:#83bee5 !important" onclick="openGptSlider()">
           🤖 Chat GPT 
         </button>
-        <div style="display:flex; gap:10px; flex-direction:column"> 
+        <div style="display:flex; gap:10px; flex-direction:column">
           <small>Đăng nhập: <?= displayName ?> </small>
-          <button onclick="logout()">Đăng xuất</button>
+          <!-- 🚫 TẠM ẨN NÚT LOGOUT - ĐÃ TẮT LOGIN -->
+          <!-- <button onclick="logout()">Đăng xuất</button> -->
+          <small style="color:#666; font-style:italic;">Login tạm tắt</small>
         </div>
       </div>
     </div>
@@ -1680,6 +1682,10 @@ padding:10px 12px;
             <label>Doanh số</label>
             <input type="text" id="peDoanhSo" class="money-input" readonly>
           </div>
+          <div class="field" style="max-width:220px;">
+          <label>Tiền đặt cọc</label>
+          <input type="text" id="peDatCoc" class="money-input">
+        </div>
         </div>
 
         <div class="card allow-overflow" style="margin-top:10px;">
@@ -2825,7 +2831,7 @@ function injectPendingPopupStyles_() {
           sum1Mam += tt;
         });
         const soMam = Number(document.getElementById("soMam").value || 0);
-
+        const datCocVal = parseMoney(document.getElementById("datCoc").value || "0"); // Lấy giá trị cọc
         const donGiaEl = document.getElementById("donGiaMam");
         const tongDonEl = document.getElementById("tongDon");
         const donGiaVal = formatMoney(sum1Mam);
@@ -3029,6 +3035,7 @@ function savePendingEdit(payload) {
       hideLoading();
       alert((e && e.message) ? e.message : e);
     })
+    console.log(payload)
     .updatePendingOrder(ST.PENDING_EDIT_ROW, payload);
 }
 
@@ -3105,7 +3112,7 @@ function openPrintPending(rowIndex){
         const sdt    = document.getElementById("sdt").value.trim();
         const diaChi = document.getElementById("diaChi").value.trim();
         const soMam  = Number(document.getElementById("soMam").value || 0);
-
+        const datCocVal = parseMoney(document.getElementById("datCoc").value || "0");
         if (!ngay) {
           errors.push("Thiếu ngày bán hàng.");
           document.getElementById("ngay").classList.add("error");
@@ -3192,7 +3199,7 @@ function openPrintPending(rowIndex){
     trangThai: readText("trangThai"),
     kmNoiDung: readText("kmNoiDung"),
     kmSoTien: parseMoney(readText("kmSoTien") || 0),
-    datCoc: parseMoney(readText("datCoc") || 0)
+    datCoc: parseMoney(readText("datCoc") || 0),
     // 2 field này không bắt buộc (server đang tự tính), giữ cũng được
     donGiaMam: parseMoney(readText("donGiaMam") || 0),
     tongDon: parseMoney(readText("tongDon") || 0)
@@ -6374,16 +6381,17 @@ function renderPendingRight(rows) {
     const tr = document.createElement("tr");
     tr.dataset.row = String(r.row || "");
     tr.dataset.orderId = String(r.orderId || "");
-
+    
     const dateStr = formatDateDMY_(r.dateRaw || r.date || r.dateStr || "");
     const info = r.info || "";
     const soMam = Number(r.soMam || 0) || 0;
     const soMon = Number(r.soMon || 0) || 0;
-    const tong = Number(r.tongDon || 0) || 0;
-    const status = (r.status && String(r.status).trim()) ? String(r.status).trim() : "Đơn chờ";
-
+    
+    const datCoc = Number(r.datCoc || 0);
+    const isOnlyDeposit = (Number(r.soMon || 0) === 0 && datCoc > 0);
+    const status = isOnlyDeposit ? "Đặt cọc" : (r.status || "Đơn chờ");
     const mamText = `${soMam}${soMon ? ` (${soMon} món)` : ""}`;
-
+    const tong = isOnlyDeposit ? datCoc : (r.tongDon || 0);
     const actionBtns = `
       <button type="button" class="icon-btn" title="In" onclick="openPrintInvoicePending(${r.row})">🖨️</button>
       ${CAN_EDIT ? `<button type="button" class="icon-btn" title="Sửa" onclick="openPendingEditPopup(${r.row})">✏️</button>` : ``}
@@ -6577,7 +6585,7 @@ function openPendingEditPopup(rowIndex) {
         setVal_("peSoMam", h.soMam || "");
         setVal_("peKmNoiDung", h.kmNoiDung || "");
         setVal_("peKmSoTien", formatMoney(h.kmSoTien || 0));
-
+        setVal_("peDatCoc", formatMoney(h.datCoc || 0)); 
         renderPendingEditItems_(res.items || []);
 
         const ov = document.getElementById("editPopupOverlay") || document.getElementById("pendingEditOverlay");
@@ -6938,7 +6946,7 @@ function collectPendingEditPayload_() {
   const soMam = Number(document.getElementById("peSoMam").value || 0) || 0;
   const kmNoiDung = document.getElementById("peKmNoiDung").value.trim();
   const kmSoTien = parseMoney(document.getElementById("peKmSoTien").value || "0");
-
+  const datCoc = parseMoney(document.getElementById("peDatCoc")?.value || "0");
   const rows = Array.from(document.querySelectorAll("#peTblMon tbody tr"));
   const items = [];
   rows.forEach(tr => {
@@ -6955,7 +6963,7 @@ function collectPendingEditPayload_() {
 
   return {
     meta: { row: rowIndex, orderId: orderId },
-    header: { ngay, nguoiLap, trangThai, sdt, tenKH, diaChi, soMam, kmNoiDung, kmSoTien },
+    header: { ngay, nguoiLap, trangThai, sdt, tenKH, diaChi, soMam, kmNoiDung, kmSoTien,datCoc: datCoc},
     items
   };
 }
@@ -6983,6 +6991,16 @@ function savePendingEditPopup() {
         if (!res || res.ok === false) {
           alert((res && res.error) ? res.error : "Lưu thất bại.");
           return;
+        }
+
+        // DEBUG: Hiển thị debug info từ server
+        if (res.debug) {
+          console.log('SERVER DEBUG:', res.debug);
+          alert('DEBUG: itemCount=' + res.debug.itemCount +
+                ', itemStart=' + res.debug.itemStart +
+                ', itemEnd=' + res.debug.itemEnd +
+                ', datCoc=' + res.debug.datCoc +
+                ', lastRow=' + res.debug.lastRow);
         }
 
         // đóng popup
