@@ -2116,13 +2116,10 @@ const info = finalTen + " - " + finalSdt + " - " + finalDc;
         itemEnd,                  // P: Dòng kết thúc (Data)
         datCoc                    // Q: Tiền đặt cọc
       ];
-      console.log(debtRow)
       shDebt.appendRow(debtRow);
+
       shP.deleteRow(rowIndex);
-      try { 
-        resetPendingSheetCache_(); 
-        // Nếu có hàm reset cho sheet công nợ, hãy gọi ở đây
-      } catch(e) {}
+      try { resetPendingSheetCache_(); } catch(e) {}
       // Trả về debug info cho client
       return {
         ok: true,
